@@ -1,0 +1,15 @@
+[package]
+name = "boot"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/GDPU-OSDev/boot"
+description = "UEFI BootLoader"
+license = "BSD-2-Clause"
+authors = ["Supdrewin"]
+
+[dependencies]
+embedded-graphics = "0.7.1"
+tinybmp = "0.3.1"
+uefi = { version = "0.15.2", features = ["exts"] }
+uefi-services = "0.12.1"
+x86_64 = "0.14.8"
