@@ -1,6 +1,7 @@
 use super::println;
 use alloc::vec::Vec;
 use core::{
+    fmt::{Display, Formatter, Result as FmtResult},
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
@@ -20,6 +21,27 @@ pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
     unsafe { &mut *graphics_output.get() }
 }
 
+pub struct Resolution {
+    width: usize,
+    height: usize,
+}
+
+impl Display for Resolution {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let Self { width, height } = self;
+        f.write_fmt(format_args!("{width}x{height}"))
+    }
+}
+
+impl From<(usize, usize)> for Resolution {
+    fn from(res: (usize, usize)) -> Self {
+        Self {
+            width: res.0,
+            height: res.1,
+        }
+    }
+}
+
 pub trait Interaction {
     fn ask_for_a_mode(&mut self);
 }
@@ -37,8 +59,8 @@ impl Interaction for GraphicsOutput<'_> {
                 .stdout()
                 .set_cursor_position(column, row)
                 .expect("Output::set_cursor_position failed");
-            let (hor_res, ver_res) = mode.info().resolution();
-            println!("{hor_res}x{ver_res}: Is this OK? (y)es/(n)o");
+            let resolution = Resolution::from(mode.info().resolution());
+            println!("{resolution}: Is this OK? (y)es/(n)o");
             loop {
                 if let Some(Key::Printable(c)) = system_table
                     .stdin()

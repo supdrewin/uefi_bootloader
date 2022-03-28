@@ -20,16 +20,16 @@ pub fn get<'a>() -> &'a mut SimpleFileSystem {
 }
 
 pub trait FileSystem {
-    fn open(&mut self, path: &str) -> File;
+    fn open(&mut self, path: &str, mode: FileMode) -> File;
 }
 
 impl FileSystem for SimpleFileSystem {
-    fn open(&mut self, path: &str) -> File {
+    fn open(&mut self, path: &str, mode: FileMode) -> File {
         let path = path.to_cstring16();
         match self
             .open_volume()
             .expect("SimpleFileSystem::open_volume failed")
-            .open(&path, FileMode::Read, FileAttribute::empty())
+            .open(&path, mode, FileAttribute::empty())
             .expect("File::open failed")
             .into_type()
             .expect("FileHandle::into_type failed")
