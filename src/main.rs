@@ -20,8 +20,15 @@ use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use fs::FileSystem;
 use gop::{DrawMarked, FrameBuffer, Interaction, Resolution};
 use tinybmp::Bmp;
-use uefi::{prelude::*, proto::media::file::FileMode, CString16};
-use x86_64::instructions;
+use uefi::{
+    prelude::*,
+    proto::{
+        console::text::{Key, ScanCode},
+        media::file::FileMode,
+    },
+    table::runtime::ResetType,
+    CString16,
+};
 
 #[entry]
 fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -65,11 +72,26 @@ fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
         );
         frame_buffer.draw_marked(logo.pixels(), Rgb888::BLACK, offset)?;
     }
-    mem::drop(config);
     #[cfg(test)]
     test_main();
+    let key_event = system_table.stdin().wait_for_key_event();
+    let key_event = unsafe { key_event.unsafe_clone() };
+    let mut events = [key_event];
     loop {
-        instructions::hlt();
+        system_table
+            .boot_services()
+            .wait_for_event(&mut events)
+            .expect("BootServices::wait_for_event failed");
+        if let Some(Key::Special(ScanCode::ESCAPE)) = system_table
+            .stdin()
+            .read_key()
+            .expect("Input::read_key failed")
+        {
+            mem::drop(config);
+            system_table
+                .runtime_services()
+                .reset(ResetType::Shutdown, Status::SUCCESS, None);
+        }
     }
 }
 

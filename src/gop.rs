@@ -61,7 +61,14 @@ impl Interaction for GraphicsOutput<'_> {
                 .expect("Output::set_cursor_position failed");
             let resolution = Resolution::from(mode.info().resolution());
             println!("{resolution}: Is this OK? (y)es/(n)o");
+            let key_event = system_table.stdin().wait_for_key_event();
+            let key_event = unsafe { key_event.unsafe_clone() };
+            let mut events = [key_event];
             loop {
+                system_table
+                    .boot_services()
+                    .wait_for_event(&mut events)
+                    .expect("BootServices::wait_for_event failed");
                 if let Some(Key::Printable(c)) = system_table
                     .stdin()
                     .read_key()
