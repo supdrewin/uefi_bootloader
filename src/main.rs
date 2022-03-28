@@ -4,6 +4,7 @@
 #![reexport_test_harness_main = "test_main"]
 #![test_runner(test_runner)]
 
+mod cfg;
 mod fs;
 mod gop;
 mod io;
@@ -13,12 +14,13 @@ extern crate alloc;
 
 use core::any;
 use embedded_graphics::{
+    pixelcolor::Rgb888,
     prelude::*,
     primitives::{PrimitiveStyle, Rectangle},
 };
 use fs::FileSystem;
-use gop::{FrameBuffer, Interaction, Logo};
-use tinybmp::RawBmp;
+use gop::{DrawMarked, FrameBuffer, Interaction};
+use tinybmp::Bmp;
 use uefi::{prelude::*, CString16};
 use x86_64::instructions;
 
@@ -33,8 +35,12 @@ fn main(_: Handle, mut system_table: SystemTable<Boot>) -> Status {
         .draw(&mut frame_buffer)
         .expect("Drawable::draw failed");
     let bytes = fs::get().open(r"\efi\boot\boot.bmp").load();
-    let logo = RawBmp::from_slice(&bytes).expect("RawBmp::from_slice failed");
-    frame_buffer.draw(logo, Default::default());
+    let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
+    let offset = Point::new(
+        frame_buffer.size().width as i32 - logo.size().width as i32 >> 1,
+        frame_buffer.size().height as i32 - logo.size().height as i32 >> 1,
+    );
+    frame_buffer.draw_marked(logo.pixels(), Rgb888::BLACK, offset)?;
     #[cfg(test)]
     test_main();
     loop {

@@ -1,13 +1,14 @@
 use super::println;
 use alloc::vec::Vec;
 use core::{
-    convert::Infallible,
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
-use tinybmp::RawBmp;
-use uefi::proto::console::{gop::GraphicsOutput, text::Key};
+use uefi::{
+    proto::console::{gop::GraphicsOutput, text::Key},
+    Error,
+};
 
 pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
     let system_table = uefi_services::system_table();
@@ -55,6 +56,27 @@ impl Interaction for GraphicsOutput<'_> {
     }
 }
 
+pub trait DrawMarked
+where
+    Self: DrawTarget + Sized,
+{
+    fn draw_marked<I>(
+        &mut self,
+        pixels: I,
+        mark: Self::Color,
+        offset: Point,
+    ) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        pixels
+            .into_iter()
+            .filter(|pixel| pixel.1 != mark)
+            .translated(offset)
+            .draw(self)
+    }
+}
+
 pub struct FrameBuffer {
     ptr: *mut u32,
     len: usize,
@@ -93,10 +115,12 @@ impl DerefMut for FrameBuffer {
     }
 }
 
+impl DrawMarked for FrameBuffer {}
+
 impl DrawTarget for FrameBuffer {
     type Color = Rgb888;
 
-    type Error = Infallible;
+    type Error = Error;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
     where
@@ -118,28 +142,5 @@ impl DrawTarget for FrameBuffer {
 impl OriginDimensions for FrameBuffer {
     fn size(&self) -> Size {
         self.size
-    }
-}
-
-pub trait Logo<Format, Mark> {
-    fn draw(&mut self, logo: Format, mark: Mark);
-}
-
-impl Logo<RawBmp<'_>, u32> for FrameBuffer {
-    fn draw(&mut self, logo: RawBmp, mark: u32) {
-        let pos = Point::new(
-            self.size.width as i32 - logo.header().image_size.width as i32 >> 1,
-            self.size.height as i32 - logo.header().image_size.height as i32 >> 1,
-        );
-        logo.pixels().for_each(|pixel| unsafe {
-            if let (x @ 0.., y @ 0..) = (pixel.position + pos).into() {
-                let (x, y) = (x as u32, y as u32);
-                if x < self.size.width && y < self.size.height && pixel.color != mark {
-                    self.ptr
-                        .offset((x + y * self.stride) as isize)
-                        .write(pixel.color);
-                }
-            }
-        });
     }
 }
