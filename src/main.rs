@@ -13,11 +13,7 @@ mod test;
 #[macro_use]
 extern crate alloc;
 
-use embedded_graphics::{
-    pixelcolor::Rgb888,
-    prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
-};
+use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use fs::FileSystem;
 use gop::{DrawMarked, FrameBuffer, Interaction};
 use tinybmp::Bmp;
@@ -30,10 +26,7 @@ fn main(_: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let graphics_output = gop::get();
     graphics_output.ask_for_a_mode();
     let mut frame_buffer = FrameBuffer::from(graphics_output);
-    Rectangle::new(Default::default(), frame_buffer.size())
-        .into_styled(PrimitiveStyle::with_fill(RgbColor::CYAN))
-        .draw(&mut frame_buffer)
-        .expect("Drawable::draw failed");
+    frame_buffer.clear(Rgb888::CYAN)?;
     let bytes = fs::get().open(r"\efi\boot\boot.bmp").load();
     let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
     let offset = Point::new(
