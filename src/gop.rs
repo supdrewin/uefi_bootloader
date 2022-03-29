@@ -6,6 +6,7 @@ use core::{
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
+use serde::{Deserialize, Serialize};
 use uefi::{
     proto::console::{gop::GraphicsOutput, text::Key},
     Error,
@@ -21,10 +22,24 @@ pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
     unsafe { &mut *graphics_output.get() }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl From<Color> for Rgb888 {
+    fn from(color: Color) -> Self {
+        let Color { r, g, b } = color;
+        Rgb888::new(r, g, b)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Resolution {
-    width: usize,
-    height: usize,
+    pub width: usize,
+    pub height: usize,
 }
 
 impl Display for Resolution {

@@ -1,0 +1,12 @@
+{
+  "background": {
+    "r": 40,
+    "g": 50,
+    "b": 60
+  },
+  "logo_path": "\\efi\\boot\\boot.bmp",
+  "resolution": {
+    "width": 1280,
+    "height": 800
+  }
+}

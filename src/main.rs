@@ -31,7 +31,7 @@ use uefi::{
 #[entry]
 fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table)?;
-    if let Ok(mut config) = Config::new(r"\efi\boot\boot.cfg") {
+    if let Ok(mut config) = Config::new(r"\efi\boot\boot.json") {
         let graphics_output = gop::get();
         let resolution = <(usize, usize)>::from(config.resolution);
         let result = graphics_output
@@ -45,7 +45,7 @@ fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
             config.resolution = info.resolution().into();
         }
         let mut frame_buffer = FrameBuffer::from(graphics_output);
-        frame_buffer.clear(config.background)?;
+        frame_buffer.clear(config.background.into())?;
         if let Ok(mut bitmap) = fs::get().open(&config.logo_path, FileMode::Read) {
             let bytes = bitmap.load()?;
             let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");

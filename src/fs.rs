@@ -62,7 +62,8 @@ impl FileExt for RegularFile {
             .expect("RegularFile::set_position failed");
         self.write(buffer)?;
         if len > buffer.len() {
-            self.write(&vec![b' '; len - buffer.len()])?;
+            let buffer = vec![b' '; len - buffer.len()];
+            self.write(&buffer)?;
         }
         Ok(())
     }
