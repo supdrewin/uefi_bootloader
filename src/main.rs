@@ -8,17 +8,16 @@ mod cfg;
 mod fs;
 mod gop;
 mod io;
+mod str;
 mod test;
 
 #[macro_use]
 extern crate alloc;
 
-use alloc::{string::ToString, vec::Vec};
 use cfg::Config;
-use core::{mem, str};
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
-use fs::FileSystem;
-use gop::{DrawMarked, FrameBuffer, Interaction, Resolution};
+use fs::{FileExt, FileSystem};
+use gop::{DrawMasked, FrameBuffer, Interaction};
 use tinybmp::Bmp;
 use uefi::{
     prelude::*,
@@ -27,50 +26,35 @@ use uefi::{
         media::file::FileMode,
     },
     table::runtime::ResetType,
-    CString16,
 };
 
 #[entry]
 fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table)?;
-    let mut config = Config::new(r"\efi\boot\boot.cfg");
-    let graphics_output = gop::get();
-    match config.get("resolution").and_then(|(resolution, _)| {
-        resolution.split_once('x').and_then(|(hor_res, ver_res)| {
-            let resolution = (
-                hor_res.parse::<usize>().expect("str::parse failed"),
-                ver_res.parse::<usize>().expect("str::parse failed"),
-            );
-            graphics_output
-                .modes()
-                .find(|mode| resolution == mode.info().resolution())
-        })
-    }) {
-        Some(mode) => graphics_output.set_mode(&mode)?,
-        None => {
+    if let Ok(mut config) = Config::new(r"\efi\boot\boot.cfg") {
+        let graphics_output = gop::get();
+        let resolution = <(usize, usize)>::from(config.resolution);
+        let result = graphics_output
+            .modes()
+            .find(|mode| resolution == mode.info().resolution());
+        if let Some(mode) = result {
+            graphics_output.set_mode(&mode)?
+        } else {
             graphics_output.ask_for_a_mode();
-            let resolution = graphics_output.current_mode_info().resolution();
-            let resolution = Resolution::from(resolution).to_string();
-            config.insert("resolution".to_string(), (resolution, true));
+            let info = graphics_output.current_mode_info();
+            config.resolution = info.resolution().into();
         }
-    }
-    let mut frame_buffer = FrameBuffer::from(graphics_output);
-    if let Some((background, _)) = config.get("background") {
-        let color = background
-            .split(',')
-            .map(|num| num.trim().parse().expect("str::parse failed"))
-            .collect::<Vec<u8>>();
-        assert_eq!(color.len(), 3);
-        frame_buffer.clear(Rgb888::new(color[0], color[1], color[2]))?;
-    }
-    if let Some((path, _)) = config.get("logo_path") {
-        let bytes = fs::get().open(path, FileMode::Read).load();
-        let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
-        let offset = Point::new(
-            frame_buffer.size().width as i32 - logo.size().width as i32 >> 1,
-            frame_buffer.size().height as i32 - logo.size().height as i32 >> 1,
-        );
-        frame_buffer.draw_marked(logo.pixels(), Rgb888::BLACK, offset)?;
+        let mut frame_buffer = FrameBuffer::from(graphics_output);
+        frame_buffer.clear(config.background)?;
+        if let Ok(mut bitmap) = fs::get().open(&config.logo_path, FileMode::Read) {
+            let bytes = bitmap.load()?;
+            let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
+            let offset = Point::new(
+                frame_buffer.size().width as i32 - logo.size().width as i32 >> 1,
+                frame_buffer.size().height as i32 - logo.size().height as i32 >> 1,
+            );
+            frame_buffer.draw_masked(logo.pixels(), Rgb888::BLACK, offset)?;
+        }
     }
     #[cfg(test)]
     test_main();
@@ -82,25 +66,14 @@ fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
             .boot_services()
             .wait_for_event(&mut events)
             .expect("BootServices::wait_for_event failed");
-        if let Some(Key::Special(ScanCode::ESCAPE)) = system_table
-            .stdin()
-            .read_key()
-            .expect("Input::read_key failed")
-        {
-            mem::drop(config);
-            system_table
-                .runtime_services()
-                .reset(ResetType::Shutdown, Status::SUCCESS, None);
+        match system_table.stdin().read_key()? {
+            Some(Key::Special(ScanCode::ESCAPE)) => {
+                let runtime_services = system_table.runtime_services();
+                runtime_services.reset(ResetType::Shutdown, Status::SUCCESS, None);
+            }
+            Some(Key::Special(c)) => print!("{c:?}"),
+            Some(Key::Printable(c)) => print!("{c}"),
+            None => (),
         }
-    }
-}
-
-trait ToCString16 {
-    fn to_cstring16(&self) -> CString16;
-}
-
-impl ToCString16 for str {
-    fn to_cstring16(&self) -> CString16 {
-        CString16::try_from(self).expect("CString16::try_from failed")
     }
 }

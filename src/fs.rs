@@ -1,12 +1,11 @@
-use super::ToCString16;
+use super::{println, str::ToCString16};
 use alloc::vec::Vec;
-use core::ops::{Deref, DerefMut};
 use uefi::{
     proto::media::{
-        file::{File as UefiFile, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
+        file::{File, FileAttribute as FileAttr, FileInfo, FileMode, FileType, RegularFile},
         fs::SimpleFileSystem,
     },
-    CString16,
+    Error, Status,
 };
 
 pub fn get<'a>() -> &'a mut SimpleFileSystem {
@@ -20,53 +19,51 @@ pub fn get<'a>() -> &'a mut SimpleFileSystem {
 }
 
 pub trait FileSystem {
-    fn open(&mut self, path: &str, mode: FileMode) -> File;
+    fn open(&mut self, path: &str, mode: FileMode) -> Result<RegularFile, Error>;
 }
 
 impl FileSystem for SimpleFileSystem {
-    fn open(&mut self, path: &str, mode: FileMode) -> File {
+    fn open(&mut self, path: &str, mode: FileMode) -> Result<RegularFile, Error> {
         let path = path.to_cstring16();
         match self
-            .open_volume()
-            .expect("SimpleFileSystem::open_volume failed")
-            .open(&path, mode, FileAttribute::empty())
-            .expect("File::open failed")
-            .into_type()
-            .expect("FileHandle::into_type failed")
+            .open_volume()?
+            .open(&path, mode, FileAttr::empty())?
+            .into_type()?
         {
-            FileType::Regular(handle) => File { handle, path },
-            FileType::Dir(_) => panic!("{path} is a directory"),
+            FileType::Regular(handle) => Ok(handle),
+            FileType::Dir(_) => {
+                println!("{path} is a directory");
+                Err(Error::from(Status::UNSUPPORTED))
+            }
         }
     }
 }
 
-pub struct File {
-    handle: RegularFile,
-    path: CString16,
+pub trait FileExt {
+    fn load(&mut self) -> Result<Vec<u8>, Error>;
+
+    fn replace(&mut self, buffer: &[u8]) -> Result<(), Error<usize>>;
 }
 
-impl File {
-    pub fn load(&mut self) -> Vec<u8> {
-        let mut buffer = vec![Default::default(); 80 + self.path.num_bytes()];
-        let info = self
-            .get_info::<FileInfo>(&mut buffer)
-            .expect("RegularFile::get_info failed");
+impl FileExt for RegularFile {
+    fn load(&mut self) -> Result<Vec<u8>, Error> {
+        let info = self.get_boxed_info::<FileInfo>()?;
         let mut buffer = vec![Default::default(); info.file_size() as usize];
         self.read(&mut buffer).expect("RegularFile::read failed");
-        buffer
+        Ok(buffer)
     }
-}
 
-impl Deref for File {
-    type Target = RegularFile;
-
-    fn deref(&self) -> &Self::Target {
-        &self.handle
-    }
-}
-
-impl DerefMut for File {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.handle
+    fn replace(&mut self, buffer: &[u8]) -> Result<(), Error<usize>> {
+        let len = self
+            .get_boxed_info::<FileInfo>()
+            .expect("File::get_boxed_info failed")
+            .file_size() as usize;
+        self.set_position(Default::default())
+            .expect("RegularFile::set_position failed");
+        self.write(buffer)?;
+        if len > buffer.len() {
+            self.write(&vec![b' '; len - buffer.len()])?;
+        }
+        Ok(())
     }
 }

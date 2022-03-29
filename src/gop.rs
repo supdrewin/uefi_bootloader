@@ -21,6 +21,7 @@ pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
     unsafe { &mut *graphics_output.get() }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Resolution {
     width: usize,
     height: usize,
@@ -39,6 +40,12 @@ impl From<(usize, usize)> for Resolution {
             width: res.0,
             height: res.1,
         }
+    }
+}
+
+impl From<Resolution> for (usize, usize) {
+    fn from(res: Resolution) -> Self {
+        (res.width, res.height)
     }
 }
 
@@ -85,14 +92,11 @@ impl Interaction for GraphicsOutput<'_> {
     }
 }
 
-pub trait DrawMarked
-where
-    Self: DrawTarget + Sized,
-{
-    fn draw_marked<I>(
+pub trait DrawMasked: DrawTarget + Sized {
+    fn draw_masked<I>(
         &mut self,
         pixels: I,
-        mark: Self::Color,
+        mask: Self::Color,
         offset: Point,
     ) -> Result<(), Self::Error>
     where
@@ -100,7 +104,7 @@ where
     {
         pixels
             .into_iter()
-            .filter(|pixel| pixel.1 != mark)
+            .filter(|pixel| pixel.1 != mask)
             .translated(offset)
             .draw(self)
     }
@@ -144,7 +148,7 @@ impl DerefMut for FrameBuffer {
     }
 }
 
-impl DrawMarked for FrameBuffer {}
+impl DrawMasked for FrameBuffer {}
 
 impl DrawTarget for FrameBuffer {
     type Color = Rgb888;
