@@ -2,20 +2,20 @@ use super::{println, str::ToCString16};
 use alloc::vec::Vec;
 use uefi::{
     proto::media::{
-        file::{File, FileAttribute as FileAttr, FileInfo, FileMode, FileType, RegularFile},
+        file::{File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
         fs::SimpleFileSystem,
     },
-    Error, Status,
+    Error, Handle, Status,
 };
 
-pub fn get<'a>() -> &'a mut SimpleFileSystem {
+pub fn get<'a>(image_handle: Handle) -> &'a mut SimpleFileSystem {
     let system_table = uefi_services::system_table();
     let system_table = unsafe { system_table.as_ref() };
     let file_system = system_table
         .boot_services()
-        .locate_protocol::<SimpleFileSystem>()
-        .expect("BootServices::locate_protocol failed");
-    unsafe { &mut *file_system.get() }
+        .get_image_file_system(image_handle)
+        .expect("BootServices::get_image_file_system failed");
+    unsafe { &mut *file_system.interface.get() }
 }
 
 pub trait FileSystem {
@@ -27,7 +27,7 @@ impl FileSystem for SimpleFileSystem {
         let path = path.to_cstring16();
         match self
             .open_volume()?
-            .open(&path, mode, FileAttr::empty())?
+            .open(&path, mode, FileAttribute::empty())?
             .into_type()?
         {
             FileType::Regular(handle) => Ok(handle),

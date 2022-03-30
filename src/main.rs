@@ -8,13 +8,14 @@ mod cfg;
 mod fs;
 mod gop;
 mod io;
+mod map;
 mod str;
 mod test;
 
 #[macro_use]
 extern crate alloc;
 
-use cfg::Config;
+use cfg::{Config, CONFIG_PATH};
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use fs::{FileExt, FileSystem};
 use gop::{DrawMasked, FrameBuffer, Interaction};
@@ -29,9 +30,11 @@ use uefi::{
 };
 
 #[entry]
-fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
+fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table)?;
-    if let Ok(mut config) = Config::new(r"\efi\boot\boot.json") {
+    let file_system = fs::get(image_handle);
+    let config_file = file_system.open(CONFIG_PATH, FileMode::CreateReadWrite)?;
+    if let Ok(mut config) = Config::new(config_file) {
         let graphics_output = gop::get();
         let resolution = <(usize, usize)>::from(config.resolution);
         let result = graphics_output
@@ -46,7 +49,7 @@ fn main(_image: Handle, mut system_table: SystemTable<Boot>) -> Status {
         }
         let mut frame_buffer = FrameBuffer::from(graphics_output);
         frame_buffer.clear(config.background.into())?;
-        if let Ok(mut bitmap) = fs::get().open(&config.logo_path, FileMode::Read) {
+        if let Ok(mut bitmap) = file_system.open(&config.logo_path, FileMode::Read) {
             let bytes = bitmap.load()?;
             let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
             let offset = Point::new(

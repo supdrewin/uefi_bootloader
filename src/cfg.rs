@@ -1,14 +1,13 @@
 use super::{
-    fs::{self, FileExt, FileSystem},
+    fs::FileExt,
     gop::{Color, Resolution},
 };
 use alloc::{str, string::String};
 use core::ops::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
-use uefi::{
-    proto::media::file::{FileMode, RegularFile},
-    Error,
-};
+use uefi::{proto::media::file::RegularFile, Error};
+
+pub const CONFIG_PATH: &str = r"\efi\boot\boot.json";
 
 #[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ConfigData {
@@ -23,8 +22,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(path: &str) -> Result<Self, Error> {
-        let mut config_file = fs::get().open(path, FileMode::CreateReadWrite)?;
+    pub fn new(mut config_file: RegularFile) -> Result<Self, Error> {
         Ok(Self {
             config_data: serde_json::from_slice::<ConfigData>(&config_file.load()?)
                 .unwrap_or_default(),
