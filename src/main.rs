@@ -36,7 +36,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let config_file = file_system.open(CONFIG_PATH, FileMode::CreateReadWrite)?;
     if let Ok(mut config) = Config::new(config_file) {
         let graphics_output = gop::get();
-        let resolution = <(usize, usize)>::from(config.resolution);
+        let resolution: (usize, usize) = config.resolution.into();
         let result = graphics_output
             .modes()
             .find(|mode| resolution == mode.info().resolution());

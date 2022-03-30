@@ -29,6 +29,16 @@ pub struct Color {
     pub b: u8,
 }
 
+impl From<Rgb888> for Color {
+    fn from(color: Rgb888) -> Self {
+        Color {
+            r: color.r(),
+            g: color.g(),
+            b: color.b(),
+        }
+    }
+}
+
 impl From<Color> for Rgb888 {
     fn from(color: Color) -> Self {
         let Color { r, g, b } = color;
