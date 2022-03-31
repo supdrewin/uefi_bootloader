@@ -15,7 +15,7 @@ mod test;
 #[macro_use]
 extern crate alloc;
 
-use cfg::{Config, CONFIG_PATH};
+use cfg::{Config, CONFIG_PATH, DEFAULT_LOGO};
 use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
 use fs::{FileExt, FileSystem};
 use gop::{DrawMasked, FrameBuffer, Interaction};
@@ -49,15 +49,18 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         }
         let mut frame_buffer = FrameBuffer::from(graphics_output);
         frame_buffer.clear(config.background.into())?;
-        if let Ok(mut bitmap) = file_system.open(&config.logo_path, FileMode::Read) {
-            let bytes = bitmap.load()?;
+        let mut draw_logo = |bytes: &[u8]| {
             let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
             let offset = Point::new(
                 frame_buffer.size().width as i32 - logo.size().width as i32 >> 1,
                 frame_buffer.size().height as i32 - logo.size().height as i32 >> 1,
             );
-            frame_buffer.draw_masked(logo.pixels(), Rgb888::BLACK, offset)?;
-        }
+            frame_buffer.draw_masked(logo.pixels(), Rgb888::BLACK, offset)
+        };
+        match file_system.open(&config.logo_path, FileMode::Read) {
+            Ok(mut bitmap) => draw_logo(&bitmap.load()?),
+            Err(_) => draw_logo(DEFAULT_LOGO),
+        }?;
     }
     #[cfg(test)]
     test_main();
