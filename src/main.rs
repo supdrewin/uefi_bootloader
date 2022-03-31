@@ -43,7 +43,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         if let Some(mode) = result {
             graphics_output.set_mode(&mode)?
         } else {
-            graphics_output.ask_for_a_mode();
+            graphics_output.ask_for_a_mode()?;
             let info = graphics_output.current_mode_info();
             config.resolution = info.resolution().into();
         }

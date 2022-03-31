@@ -1,15 +1,23 @@
-use super::println;
-use alloc::vec::Vec;
+use alloc::{string::ToString, vec::Vec};
 use core::{
     fmt::{Display, Formatter, Result as FmtResult},
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
-use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
+use embedded_graphics::{
+    mono_font::{iso_8859_10::FONT_10X20, MonoTextStyle},
+    pixelcolor::Rgb888,
+    prelude::*,
+    primitives::{PrimitiveStyleBuilder, Rectangle},
+    text::{Alignment, Text},
+};
 use serde::{Deserialize, Serialize};
 use uefi::{
-    proto::console::{gop::GraphicsOutput, text::Key},
-    Error,
+    proto::console::{
+        gop::GraphicsOutput,
+        text::{Key, ScanCode},
+    },
+    Error, Result as UefiResult,
 };
 
 pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
@@ -75,41 +83,131 @@ impl From<Resolution> for (usize, usize) {
 }
 
 pub trait Interaction {
-    fn ask_for_a_mode(&mut self);
+    fn ask_for_a_mode(&mut self) -> UefiResult;
 }
 
 impl Interaction for GraphicsOutput<'_> {
-    fn ask_for_a_mode(&mut self) {
+    fn ask_for_a_mode(&mut self) -> UefiResult {
+        let mut frame_buffer = FrameBuffer::from(&mut *self);
+        let background_color = Rgb888::new(168, 154, 132);
+        let stroke_color = Rgb888::new(40, 40, 40);
+        let (x, y) = self.current_mode_info().resolution();
+        let center = Point::new(x as i32 >> 1, y as i32 >> 1);
+        Rectangle::new(
+            Point {
+                x: center.x - 100,
+                y: center.y - 150,
+            },
+            Size::new(200, 300),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(background_color)
+                .build(),
+        )
+        .draw(&mut frame_buffer)?;
+        Rectangle::new(
+            Point {
+                x: center.x - 90,
+                y: center.y - 140,
+            },
+            Size::new(180, 280),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .stroke_color(stroke_color)
+                .stroke_width(1)
+                .build(),
+        )
+        .draw(&mut frame_buffer)?;
+        let mut character_style = MonoTextStyle::new(&FONT_10X20, Rgb888::RED);
+        character_style.background_color = Some(background_color);
+        Text::with_alignment(
+            "Resolution",
+            Point {
+                y: center.y - 135,
+                ..center
+            },
+            character_style,
+            Alignment::Center,
+        )
+        .draw(&mut frame_buffer)?;
+        character_style.text_color = Some(Rgb888::BLUE);
+        Text::with_alignment(
+            "<Enter>",
+            Point {
+                y: center.y + 120,
+                ..center
+            },
+            character_style,
+            Alignment::Center,
+        )
+        .draw(&mut frame_buffer)?;
+        let dialog_box = Rectangle::new(
+            Point {
+                x: center.x - 80,
+                y: center.y - 100,
+            },
+            Size::new(160, 200),
+        )
+        .into_styled(
+            PrimitiveStyleBuilder::new()
+                .fill_color(background_color)
+                .build(),
+        );
         let mut system_table = uefi_services::system_table();
         let system_table = unsafe { system_table.as_mut() };
+        let key_event = system_table.stdin().wait_for_key_event();
+        let key_event = unsafe { key_event.unsafe_clone() };
+        let mut events = [key_event];
         let modes = self.modes().collect::<Vec<_>>();
-        let (column, row) = system_table.stdout().cursor_position();
-        'f: for mode in modes.iter().cycle() {
-            self.set_mode(&mode)
-                .expect("GraphicsOutput::set_mode failed");
-            system_table
-                .stdout()
-                .set_cursor_position(column, row)
-                .expect("Output::set_cursor_position failed");
-            let resolution = Resolution::from(mode.info().resolution());
-            println!("{resolution}: Is this OK? (y)es/(n)o");
-            let key_event = system_table.stdin().wait_for_key_event();
-            let key_event = unsafe { key_event.unsafe_clone() };
-            let mut events = [key_event];
+        let bound = modes.len().min(5);
+        let position = Point {
+            y: center.y - 35 * (bound >> 1) as i32,
+            ..center
+        };
+        let mut index = 0;
+        loop {
+            dialog_box.draw(&mut frame_buffer)?;
+            let mut position = position;
+            (0..bound).into_iter().try_for_each(|i| {
+                character_style.text_color = Some(match i == bound >> 1 {
+                    false => Rgb888::BLACK,
+                    true => Rgb888::BLUE,
+                });
+                let index = (index + i) % modes.len();
+                let resolution = modes[index].info().resolution();
+                let text = Resolution::from(resolution).to_string();
+                Text::with_alignment(&text, position, character_style, Alignment::Center)
+                    .draw(&mut frame_buffer)
+                    .and_then(|_| Ok(position.y += 30))
+            })?;
             loop {
                 system_table
                     .boot_services()
                     .wait_for_event(&mut events)
                     .expect("BootServices::wait_for_event failed");
-                if let Some(Key::Printable(c)) = system_table
-                    .stdin()
-                    .read_key()
-                    .expect("Input::read_key failed")
-                {
-                    match char::from(c) {
-                        'y' => break 'f,
-                        'n' => break,
-                        _ => (),
+                if let Some(key) = system_table.stdin().read_key()? {
+                    match key {
+                        Key::Printable(c) => match char::from(c) {
+                            '\r' => {
+                                let mode = &modes[((bound >> 1) + index) % modes.len()];
+                                return self.set_mode(mode);
+                            }
+                            _ => (),
+                        },
+                        Key::Special(c) => match c {
+                            ScanCode::UP => {
+                                index += modes.len() - 1;
+                                index %= modes.len();
+                                break;
+                            }
+                            ScanCode::DOWN => {
+                                index += 1;
+                                break;
+                            }
+                            _ => (),
+                        },
                     }
                 }
             }
@@ -140,23 +238,6 @@ pub struct FrameBuffer {
     len: usize,
     stride: u32,
     size: Size,
-}
-
-impl FrameBuffer {
-    pub fn from(graphics_output: &mut GraphicsOutput) -> Self {
-        let mode_info = graphics_output.current_mode_info();
-        let (width, height) = mode_info.resolution();
-        let mut frame_buffer = graphics_output.frame_buffer();
-        Self {
-            ptr: frame_buffer.as_mut_ptr().cast::<u32>(),
-            len: frame_buffer.size() >> 2,
-            stride: mode_info.stride() as u32,
-            size: Size {
-                width: width as u32,
-                height: height as u32,
-            },
-        }
-    }
 }
 
 impl Deref for FrameBuffer {
@@ -194,6 +275,23 @@ impl DrawTarget for FrameBuffer {
                 }
             }
         }))
+    }
+}
+
+impl From<&mut GraphicsOutput<'_>> for FrameBuffer {
+    fn from(graphics_output: &mut GraphicsOutput) -> Self {
+        let mode_info = graphics_output.current_mode_info();
+        let (width, height) = mode_info.resolution();
+        let mut frame_buffer = graphics_output.frame_buffer();
+        Self {
+            ptr: frame_buffer.as_mut_ptr().cast::<u32>(),
+            len: frame_buffer.size() >> 2,
+            stride: mode_info.stride() as u32,
+            size: Size {
+                width: width as u32,
+                height: height as u32,
+            },
+        }
     }
 }
 
