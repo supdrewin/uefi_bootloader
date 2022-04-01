@@ -15,7 +15,7 @@ mod test;
 #[macro_use]
 extern crate alloc;
 
-use cfg::{Config, CONFIG_PATH, DEFAULT_LOGO};
+use cfg::{Config, ConfigData, CONFIG_PATH, DEFAULT_LOGO};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb888,
@@ -45,33 +45,39 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let graphics_output = gop::get();
     let file_system = fs::get(image_handle);
     let config_file = file_system.open(CONFIG_PATH, FileMode::CreateReadWrite)?;
+    let mut config_data = ConfigData::default();
     if let Ok(mut config) = Config::new(config_file) {
         let resolution: (usize, usize) = config.resolution.into();
         let result = graphics_output
             .modes()
             .find(|mode| resolution == mode.info().resolution());
         if let Some(mode) = result {
-            graphics_output.set_mode(&mode)?
+            graphics_output.set_mode(&mode)?;
         } else {
-            graphics_output.set_resolution()?;
-            let info = graphics_output.current_mode_info();
-            config.resolution = info.resolution().into();
+            if let Ok(_) = graphics_output.set_resolution() {
+                let info = graphics_output.current_mode_info();
+                config.resolution = info.resolution().into();
+            }
         }
-        let mut frame_buffer = FrameBuffer::from(&mut *graphics_output);
-        frame_buffer.clear(config.background.into())?;
+        config_data = config.clone();
+    }
+    let mut frame_buffer = FrameBuffer::from(&mut *graphics_output);
+    let mut draw_logo = || {
+        frame_buffer.clear(config_data.background.into())?;
         let mut draw_logo = |bytes: &[u8]| {
-            let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
+            let logo = Bmp::<Rgb888>::from_slice(&bytes).or(Err(Status::UNSUPPORTED))?;
             let offset = Point::new(
                 frame_buffer.size().width as i32 - logo.size().width as i32 >> 1,
                 frame_buffer.size().height as i32 - logo.size().height as i32 >> 1,
             );
             frame_buffer.draw_masked(logo.pixels(), Rgb888::BLACK, offset)
         };
-        match file_system.open(&config.logo_path, FileMode::Read) {
+        match file_system.open(&config_data.logo_path, FileMode::Read) {
             Ok(mut bitmap) => draw_logo(&bitmap.load()?),
             Err(_) => draw_logo(DEFAULT_LOGO),
-        }?;
-    }
+        }
+    };
+    draw_logo()?;
     #[cfg(test)]
     test_main();
     let key_event = system_table.stdin().wait_for_key_event();
@@ -80,6 +86,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
         if let Some(Key::Special(ScanCode::ESCAPE)) = system_table.stdin().read_key()? {
             power_options(graphics_output)?;
+            draw_logo()?;
         }
     }
     Status::ABORTED
@@ -136,25 +143,30 @@ fn power_options(graphics_output: &mut GraphicsOutput) -> Result {
     let position = Point::new(center.x, center.y - 35);
     let texts = ["Continue", "Reboot", "Shutdown"];
     let mut index = 0;
-    'outer: loop {
+    let index = 'outer: loop {
         dialog_box.draw(&mut frame_buffer)?;
         let mut position = position;
-        for i in 0..3 {
-            character_style.text_color = Some(match i == index % 3 {
+        texts.iter().enumerate().try_for_each(|(i, text)| {
+            character_style.text_color = Some(match i == index % texts.len() {
                 false => Rgb888::BLACK,
                 true => Rgb888::BLUE,
             });
-            Text::with_alignment(&texts[i], position, character_style, Alignment::Center)
+            Text::with_alignment(&text, position, character_style, Alignment::Center)
                 .draw(&mut frame_buffer)
-                .and_then(|_| Ok(position.y += 30))?;
-        }
+                .and_then(|_| Ok(position.y += 30))
+        })?;
         while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
             if let Some(key) = system_table.stdin().read_key()? {
                 match key {
+                    Key::Printable(c) if '\r' == c.into() => {
+                        let index = index % texts.len();
+                        break 'outer index;
+                    }
                     Key::Special(c) => match c {
+                        ScanCode::ESCAPE => break 'outer 0,
                         ScanCode::UP => {
-                            index += 2;
-                            index %= 3;
+                            index += texts.len() - 1;
+                            index %= texts.len();
                             break;
                         }
                         ScanCode::DOWN => {
@@ -163,19 +175,16 @@ fn power_options(graphics_output: &mut GraphicsOutput) -> Result {
                         }
                         _ => (),
                     },
-                    Key::Printable(c) if char::from(c) == '\r' => {
-                        break 'outer;
-                    }
                     _ => (),
                 }
             }
         }
-    }
+    };
     let runtime_services = system_table.runtime_services();
     let reset = |rt: ResetType| {
         runtime_services.reset(rt, Status::SUCCESS, None);
     };
-    match index % 3 {
+    match index {
         1 => reset(ResetType::Cold),
         2 => reset(ResetType::Shutdown),
         _ => Ok(()),

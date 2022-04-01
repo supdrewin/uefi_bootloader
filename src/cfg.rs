@@ -10,7 +10,7 @@ use uefi::{proto::media::file::RegularFile, Error};
 pub const CONFIG_PATH: &str = r"\efi\boot\boot.json";
 pub const DEFAULT_LOGO: &[u8] = include_bytes!("boot.bmp");
 
-#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ConfigData {
     pub background: Color,
     pub logo_path: String,

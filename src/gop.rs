@@ -17,7 +17,7 @@ use uefi::{
         gop::GraphicsOutput,
         text::{Key, ScanCode},
     },
-    Error, Result as UefiResult,
+    Error, Result as UefiResult, Status,
 };
 
 pub const BACKGROUND_COLOR: Rgb888 = Rgb888::new(168, 154, 132);
@@ -160,14 +160,12 @@ impl Interaction for GraphicsOutput<'_> {
             while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
                 if let Some(key) = system_table.stdin().read_key()? {
                     match key {
-                        Key::Printable(c) => match char::from(c) {
-                            '\r' => {
-                                let mode = &modes[((bound >> 1) + index) % modes.len()];
-                                return self.set_mode(mode);
-                            }
-                            _ => (),
-                        },
+                        Key::Printable(c) if '\r' == c.into() => {
+                            let mode = &modes[((bound >> 1) + index) % modes.len()];
+                            return self.set_mode(mode);
+                        }
                         Key::Special(c) => match c {
+                            ScanCode::ESCAPE => return Err(Error::from(Status::ABORTED)),
                             ScanCode::UP => {
                                 index += modes.len() - 1;
                                 index %= modes.len();
@@ -179,6 +177,7 @@ impl Interaction for GraphicsOutput<'_> {
                             }
                             _ => (),
                         },
+                        _ => (),
                     }
                 }
             }
