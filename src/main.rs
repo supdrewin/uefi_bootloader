@@ -77,15 +77,12 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let key_event = system_table.stdin().wait_for_key_event();
     let key_event = unsafe { key_event.unsafe_clone() };
     let mut events = [key_event];
-    loop {
-        system_table
-            .boot_services()
-            .wait_for_event(&mut events)
-            .expect("BootServices::wait_for_event failed");
+    while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
         if let Some(Key::Special(ScanCode::ESCAPE)) = system_table.stdin().read_key()? {
             power_options(graphics_output)?;
         }
     }
+    Status::ABORTED
 }
 
 fn power_options(graphics_output: &mut GraphicsOutput) -> Result {
@@ -175,9 +172,12 @@ fn power_options(graphics_output: &mut GraphicsOutput) -> Result {
         }
     }
     let runtime_services = system_table.runtime_services();
+    let reset = |rt: ResetType| {
+        runtime_services.reset(rt, Status::SUCCESS, None);
+    };
     match index % 3 {
-        1 => runtime_services.reset(ResetType::Cold, Status::SUCCESS, None),
-        2 => runtime_services.reset(ResetType::Shutdown, Status::SUCCESS, None),
+        1 => reset(ResetType::Cold),
+        2 => reset(ResetType::Shutdown),
         _ => Ok(()),
     }
 }
