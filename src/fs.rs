@@ -1,11 +1,17 @@
 use super::{println, str::ToCString16};
 use alloc::vec::Vec;
 use uefi::{
-    proto::media::{
-        file::{File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
-        fs::SimpleFileSystem,
+    prelude::*,
+    proto::{
+        device_path::DevicePath,
+        loaded_image::LoadedImage,
+        media::{
+            file::{File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
+            fs::SimpleFileSystem,
+        },
     },
-    Error, Handle, Status,
+    table::boot::{OpenProtocolAttributes, OpenProtocolParams},
+    CStr16, Char16, Error,
 };
 
 pub fn get<'a>(image_handle: Handle) -> &'a mut SimpleFileSystem {
@@ -16,6 +22,43 @@ pub fn get<'a>(image_handle: Handle) -> &'a mut SimpleFileSystem {
         .get_image_file_system(image_handle)
         .expect("BootServices::get_image_file_system failed");
     unsafe { &mut *file_system.interface.get() }
+}
+
+pub trait BootServicesExt {
+    fn get_image_file_path(&self, image_handle: Handle) -> Result<&CStr16, Error>;
+}
+
+impl BootServicesExt for BootServices {
+    fn get_image_file_path(&self, image_handle: Handle) -> Result<&CStr16, Error> {
+        #[repr(C)]
+        struct LoadedImagePart {
+            revision: u32,
+            parent_handle: Handle,
+            system_table: *const SystemTable<Boot>,
+            device_handle: Handle,
+            file_path: *const DevicePath,
+        }
+        Ok(unsafe {
+            CStr16::from_ptr(
+                self.open_protocol::<LoadedImage>(
+                    OpenProtocolParams {
+                        handle: image_handle,
+                        agent: image_handle,
+                        controller: None,
+                    },
+                    OpenProtocolAttributes::Exclusive,
+                )?
+                .interface
+                .get()
+                .cast::<LoadedImagePart>()
+                .as_ref()
+                .ok_or(Status::UNSUPPORTED)?
+                .file_path
+                .offset(1)
+                .cast::<Char16>(),
+            )
+        })
+    }
 }
 
 pub trait FileSystem {

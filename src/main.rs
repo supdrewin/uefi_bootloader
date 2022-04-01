@@ -15,7 +15,8 @@ mod test;
 #[macro_use]
 extern crate alloc;
 
-use cfg::{Config, ConfigData, CONFIG_PATH, DEFAULT_LOGO};
+use alloc::string::ToString;
+use cfg::{Config, ConfigData, DEFAULT_LOGO};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb888,
@@ -23,7 +24,7 @@ use embedded_graphics::{
     primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text},
 };
-use fs::{FileExt, FileSystem};
+use fs::{BootServicesExt, FileExt, FileSystem};
 use gop::{DrawMasked, FrameBuffer, Interaction, BACKGROUND_COLOR, STROKE_COLOR};
 use tinybmp::Bmp;
 use uefi::{
@@ -44,7 +45,15 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table)?;
     let graphics_output = gop::get();
     let file_system = fs::get(image_handle);
-    let config_file = file_system.open(CONFIG_PATH, FileMode::CreateReadWrite)?;
+    let config_path = system_table
+        .boot_services()
+        .get_image_file_path(image_handle)?
+        .to_string();
+    let config_path = config_path
+        .rsplit_once('.')
+        .expect("String::rsplit_once failed");
+    let config_path = config_path.0.to_string() + ".json";
+    let config_file = file_system.open(&config_path, FileMode::CreateReadWrite)?;
     let mut config_data = ConfigData::default();
     if let Ok(mut config) = Config::new(config_file) {
         let resolution: (usize, usize) = config.resolution.into();
