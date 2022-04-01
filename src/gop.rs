@@ -5,10 +5,10 @@ use core::{
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
 use embedded_graphics::{
-    mono_font::{iso_8859_10::FONT_10X20, MonoTextStyle},
+    mono_font::{ascii::FONT_10X20, MonoTextStyle},
     pixelcolor::Rgb888,
     prelude::*,
-    primitives::{PrimitiveStyleBuilder, Rectangle},
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::{Alignment, Text},
 };
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,9 @@ use uefi::{
     },
     Error, Result as UefiResult,
 };
+
+pub const BACKGROUND_COLOR: Rgb888 = Rgb888::new(168, 154, 132);
+pub const STROKE_COLOR: Rgb888 = Rgb888::new(40, 40, 40);
 
 pub fn get<'a>() -> &'a mut GraphicsOutput<'a> {
     let system_table = uefi_services::system_table();
@@ -83,51 +86,36 @@ impl From<Resolution> for (usize, usize) {
 }
 
 pub trait Interaction {
-    fn ask_for_a_mode(&mut self) -> UefiResult;
+    fn set_resolution(&mut self) -> UefiResult;
 }
 
 impl Interaction for GraphicsOutput<'_> {
-    fn ask_for_a_mode(&mut self) -> UefiResult {
+    fn set_resolution(&mut self) -> UefiResult {
         let mut frame_buffer = FrameBuffer::from(&mut *self);
-        let background_color = Rgb888::new(168, 154, 132);
-        let stroke_color = Rgb888::new(40, 40, 40);
         let (x, y) = self.current_mode_info().resolution();
         let center = Point::new(x as i32 >> 1, y as i32 >> 1);
         Rectangle::new(
-            Point {
-                x: center.x - 100,
-                y: center.y - 150,
-            },
+            Point::new(center.x - 100, center.y - 150),
             Size::new(200, 300),
         )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(background_color)
-                .build(),
-        )
+        .into_styled(PrimitiveStyle::with_fill(BACKGROUND_COLOR))
         .draw(&mut frame_buffer)?;
         Rectangle::new(
-            Point {
-                x: center.x - 90,
-                y: center.y - 140,
-            },
+            Point::new(center.x - 90, center.y - 140),
             Size::new(180, 280),
         )
         .into_styled(
             PrimitiveStyleBuilder::new()
-                .stroke_color(stroke_color)
+                .stroke_color(STROKE_COLOR)
                 .stroke_width(1)
                 .build(),
         )
         .draw(&mut frame_buffer)?;
         let mut character_style = MonoTextStyle::new(&FONT_10X20, Rgb888::RED);
-        character_style.background_color = Some(background_color);
+        character_style.background_color = Some(BACKGROUND_COLOR);
         Text::with_alignment(
             "Resolution",
-            Point {
-                y: center.y - 135,
-                ..center
-            },
+            Point::new(center.x, center.y - 135),
             character_style,
             Alignment::Center,
         )
@@ -135,26 +123,16 @@ impl Interaction for GraphicsOutput<'_> {
         character_style.text_color = Some(Rgb888::BLUE);
         Text::with_alignment(
             "<Enter>",
-            Point {
-                y: center.y + 120,
-                ..center
-            },
+            Point::new(center.x, center.y + 120),
             character_style,
             Alignment::Center,
         )
         .draw(&mut frame_buffer)?;
         let dialog_box = Rectangle::new(
-            Point {
-                x: center.x - 80,
-                y: center.y - 100,
-            },
+            Point::new(center.x - 80, center.y - 100),
             Size::new(160, 200),
         )
-        .into_styled(
-            PrimitiveStyleBuilder::new()
-                .fill_color(background_color)
-                .build(),
-        );
+        .into_styled(PrimitiveStyle::with_fill(BACKGROUND_COLOR));
         let mut system_table = uefi_services::system_table();
         let system_table = unsafe { system_table.as_mut() };
         let key_event = system_table.stdin().wait_for_key_event();
@@ -162,10 +140,7 @@ impl Interaction for GraphicsOutput<'_> {
         let mut events = [key_event];
         let modes = self.modes().collect::<Vec<_>>();
         let bound = modes.len().min(5);
-        let position = Point {
-            y: center.y - 35 * (bound >> 1) as i32,
-            ..center
-        };
+        let position = Point::new(center.x, center.y - 35 * (bound >> 1) as i32);
         let mut index = 0;
         loop {
             dialog_box.draw(&mut frame_buffer)?;
@@ -182,11 +157,7 @@ impl Interaction for GraphicsOutput<'_> {
                     .draw(&mut frame_buffer)
                     .and_then(|_| Ok(position.y += 30))
             })?;
-            loop {
-                system_table
-                    .boot_services()
-                    .wait_for_event(&mut events)
-                    .expect("BootServices::wait_for_event failed");
+            while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
                 if let Some(key) = system_table.stdin().read_key()? {
                     match key {
                         Key::Printable(c) => match char::from(c) {

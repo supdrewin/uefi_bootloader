@@ -16,26 +16,36 @@ mod test;
 extern crate alloc;
 
 use cfg::{Config, CONFIG_PATH, DEFAULT_LOGO};
-use embedded_graphics::{pixelcolor::Rgb888, prelude::*};
+use embedded_graphics::{
+    mono_font::{ascii::FONT_10X20, MonoTextStyle},
+    pixelcolor::Rgb888,
+    prelude::*,
+    primitives::{PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
+    text::{Alignment, Text},
+};
 use fs::{FileExt, FileSystem};
-use gop::{DrawMasked, FrameBuffer, Interaction};
+use gop::{DrawMasked, FrameBuffer, Interaction, BACKGROUND_COLOR, STROKE_COLOR};
 use tinybmp::Bmp;
 use uefi::{
     prelude::*,
     proto::{
-        console::text::{Key, ScanCode},
+        console::{
+            gop::GraphicsOutput,
+            text::{Key, ScanCode},
+        },
         media::file::FileMode,
     },
     table::runtime::ResetType,
+    Result,
 };
 
 #[entry]
 fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     uefi_services::init(&mut system_table)?;
+    let graphics_output = gop::get();
     let file_system = fs::get(image_handle);
     let config_file = file_system.open(CONFIG_PATH, FileMode::CreateReadWrite)?;
     if let Ok(mut config) = Config::new(config_file) {
-        let graphics_output = gop::get();
         let resolution: (usize, usize) = config.resolution.into();
         let result = graphics_output
             .modes()
@@ -43,11 +53,11 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         if let Some(mode) = result {
             graphics_output.set_mode(&mode)?
         } else {
-            graphics_output.ask_for_a_mode()?;
+            graphics_output.set_resolution()?;
             let info = graphics_output.current_mode_info();
             config.resolution = info.resolution().into();
         }
-        let mut frame_buffer = FrameBuffer::from(graphics_output);
+        let mut frame_buffer = FrameBuffer::from(&mut *graphics_output);
         frame_buffer.clear(config.background.into())?;
         let mut draw_logo = |bytes: &[u8]| {
             let logo = Bmp::<Rgb888>::from_slice(&bytes).expect("Bmp::from_slice failed");
@@ -72,14 +82,102 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             .boot_services()
             .wait_for_event(&mut events)
             .expect("BootServices::wait_for_event failed");
-        match system_table.stdin().read_key()? {
-            Some(Key::Special(ScanCode::ESCAPE)) => {
-                let runtime_services = system_table.runtime_services();
-                runtime_services.reset(ResetType::Shutdown, Status::SUCCESS, None);
-            }
-            Some(Key::Special(c)) => print!("{c:?}"),
-            Some(Key::Printable(c)) => print!("{c}"),
-            None => (),
+        if let Some(Key::Special(ScanCode::ESCAPE)) = system_table.stdin().read_key()? {
+            power_options(graphics_output)?;
         }
+    }
+}
+
+fn power_options(graphics_output: &mut GraphicsOutput) -> Result {
+    let mut frame_buffer = FrameBuffer::from(&mut *graphics_output);
+    let (x, y) = graphics_output.current_mode_info().resolution();
+    let center = Point::new(x as i32 >> 1, y as i32 >> 1);
+    Rectangle::new(
+        Point::new(center.x - 100, center.y - 150),
+        Size::new(200, 300),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BACKGROUND_COLOR))
+    .draw(&mut frame_buffer)?;
+    Rectangle::new(
+        Point::new(center.x - 90, center.y - 140),
+        Size::new(180, 280),
+    )
+    .into_styled(
+        PrimitiveStyleBuilder::new()
+            .stroke_color(STROKE_COLOR)
+            .stroke_width(1)
+            .build(),
+    )
+    .draw(&mut frame_buffer)?;
+    let mut character_style = MonoTextStyle::new(&FONT_10X20, Rgb888::RED);
+    character_style.background_color = Some(BACKGROUND_COLOR);
+    Text::with_alignment(
+        "Options",
+        Point::new(center.x, center.y - 135),
+        character_style,
+        Alignment::Center,
+    )
+    .draw(&mut frame_buffer)?;
+    character_style.text_color = Some(Rgb888::BLUE);
+    Text::with_alignment(
+        "<Enter>",
+        Point::new(center.x, center.y + 120),
+        character_style,
+        Alignment::Center,
+    )
+    .draw(&mut frame_buffer)?;
+    let dialog_box = Rectangle::new(
+        Point::new(center.x - 80, center.y - 100),
+        Size::new(160, 200),
+    )
+    .into_styled(PrimitiveStyle::with_fill(BACKGROUND_COLOR));
+    let mut system_table = uefi_services::system_table();
+    let system_table = unsafe { system_table.as_mut() };
+    let key_event = system_table.stdin().wait_for_key_event();
+    let key_event = unsafe { key_event.unsafe_clone() };
+    let mut events = [key_event];
+    let position = Point::new(center.x, center.y - 35);
+    let texts = ["Continue", "Reboot", "Shutdown"];
+    let mut index = 0;
+    'outer: loop {
+        dialog_box.draw(&mut frame_buffer)?;
+        let mut position = position;
+        for i in 0..3 {
+            character_style.text_color = Some(match i == index % 3 {
+                false => Rgb888::BLACK,
+                true => Rgb888::BLUE,
+            });
+            Text::with_alignment(&texts[i], position, character_style, Alignment::Center)
+                .draw(&mut frame_buffer)
+                .and_then(|_| Ok(position.y += 30))?;
+        }
+        while let Ok(_) = system_table.boot_services().wait_for_event(&mut events) {
+            if let Some(key) = system_table.stdin().read_key()? {
+                match key {
+                    Key::Special(c) => match c {
+                        ScanCode::UP => {
+                            index += 2;
+                            index %= 3;
+                            break;
+                        }
+                        ScanCode::DOWN => {
+                            index += 1;
+                            break;
+                        }
+                        _ => (),
+                    },
+                    Key::Printable(c) if char::from(c) == '\r' => {
+                        break 'outer;
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
+    let runtime_services = system_table.runtime_services();
+    match index % 3 {
+        1 => runtime_services.reset(ResetType::Cold, Status::SUCCESS, None),
+        2 => runtime_services.reset(ResetType::Shutdown, Status::SUCCESS, None),
+        _ => Ok(()),
     }
 }
