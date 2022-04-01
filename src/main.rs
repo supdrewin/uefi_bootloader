@@ -53,11 +53,9 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             .find(|mode| resolution == mode.info().resolution());
         if let Some(mode) = result {
             graphics_output.set_mode(&mode)?;
-        } else {
-            if let Ok(_) = graphics_output.set_resolution() {
-                let info = graphics_output.current_mode_info();
-                config.resolution = info.resolution().into();
-            }
+        } else if let Ok(_) = graphics_output.set_resolution() {
+            let info = graphics_output.current_mode_info();
+            config.resolution = info.resolution().into();
         }
         config_data = config.clone();
     }
