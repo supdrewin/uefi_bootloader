@@ -1,6 +1,6 @@
 use alloc::{string::ToString, vec::Vec};
 use core::{
-    fmt::{Display, Formatter, Result as FmtResult},
+    fmt::{self, Display, Formatter},
     ops::{Deref, DerefMut},
     ptr::{slice_from_raw_parts, slice_from_raw_parts_mut},
 };
@@ -17,7 +17,7 @@ use uefi::{
         gop::GraphicsOutput,
         text::{Key, ScanCode},
     },
-    Error, Result as UefiResult, Status,
+    Error, Status,
 };
 
 pub const BACKGROUND_COLOR: Rgb888 = Rgb888::new(168, 154, 132);
@@ -64,7 +64,7 @@ pub struct Resolution {
 }
 
 impl Display for Resolution {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let Self { width, height } = self;
         f.write_fmt(format_args!("{width}x{height}"))
     }
@@ -86,11 +86,11 @@ impl From<Resolution> for (usize, usize) {
 }
 
 pub trait Interaction {
-    fn set_resolution(&mut self) -> UefiResult;
+    fn set_resolution(&mut self) -> uefi::Result;
 }
 
 impl Interaction for GraphicsOutput<'_> {
-    fn set_resolution(&mut self) -> UefiResult {
+    fn set_resolution(&mut self) -> uefi::Result {
         let mut frame_buffer = FrameBuffer::from(&mut *self);
         let (x, y) = self.current_mode_info().resolution();
         let center = Point::new(x as i32 >> 1, y as i32 >> 1);
