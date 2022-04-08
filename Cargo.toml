@@ -1,8 +1,8 @@
 [package]
-name = "boot"
+name = "uefi-bootloader"
 version = "0.2.0"
 edition = "2021"
-repository = "https://github.com/GDPU-OSDev/boot"
+repository = "https://github.com/supdrewin/uefi-bootloader"
 description = "UEFI BootLoader"
 license = "BSD-2-Clause"
 authors = ["Supdrewin"]
