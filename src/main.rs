@@ -11,6 +11,7 @@ mod io;
 mod map;
 mod str;
 mod test;
+mod ui;
 
 #[macro_use]
 extern crate alloc;
