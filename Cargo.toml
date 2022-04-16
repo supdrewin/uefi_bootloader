@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/supdrewin/uefi-bootloader"
 description = "UEFI BootLoader"
-license = "BSD-2-Clause"
+license = "MPL-2.0"
 authors = ["Supdrewin"]
 
 [dependencies]
