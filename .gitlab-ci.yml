@@ -1,0 +1,13 @@
+image: rust:latest
+
+variables:
+  RUSTUP_UPDATE_ROOT: "https://mirrors.ustc.edu.cn/rust-static/rustup"
+  RUSTUP_DIST_SERVER: "https://mirrors.ustc.edu.cn/rust-static"
+
+build:
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/x86_64-unknown-uefi/release/uefi-bootloader.efi
+    expire_in: 1 week

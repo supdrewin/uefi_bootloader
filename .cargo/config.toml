@@ -1,6 +1,10 @@
 [build]
 target = "x86_64-unknown-uefi"
 
+[source]
+crates-io.replace-with = "ustc"
+ustc.registry = "https://mirrors.ustc.edu.cn/crates.io-index"
+
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
