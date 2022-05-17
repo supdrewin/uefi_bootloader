@@ -17,3 +17,6 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 tinybmp = "0.3"
 uefi = { version = "0.16", features = ["exts"] }
 uefi-services = "0.13"
+
+[profile.release]
+lto = "thin"
