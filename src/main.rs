@@ -11,7 +11,6 @@ mod io;
 mod map;
 mod str;
 mod test;
-mod ui;
 
 #[macro_use]
 extern crate alloc;
@@ -48,7 +47,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let file_system = fs::get(image_handle);
     let config_path = system_table
         .boot_services()
-        .get_image_file_path(image_handle)?
+        .get_image_file_path(image_handle)
+        .expect("Failed to get image file path")
         .to_string();
     let config_path = config_path
         .rsplit_once('.')

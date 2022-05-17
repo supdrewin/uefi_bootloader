@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use uefi::{
     prelude::*,
     proto::{
-        device_path::DevicePath,
+        device_path::text::{AllowShortcuts, DevicePathToText, DisplayOnly, PoolString},
         loaded_image::LoadedImage,
         media::{
             file::{File, FileAttribute, FileInfo, FileMode, FileType, RegularFile},
@@ -11,7 +11,7 @@ use uefi::{
         },
     },
     table::boot::{OpenProtocolAttributes, OpenProtocolParams},
-    CStr16, Char16, Error,
+    Error,
 };
 
 pub fn get<'a>(image_handle: Handle) -> &'a mut SimpleFileSystem {
@@ -25,39 +25,35 @@ pub fn get<'a>(image_handle: Handle) -> &'a mut SimpleFileSystem {
 }
 
 pub trait BootServicesExt {
-    fn get_image_file_path(&self, image_handle: Handle) -> Result<&CStr16, Error>;
+    fn get_image_file_path(&self, image_handle: Handle) -> Option<PoolString>;
 }
 
 impl BootServicesExt for BootServices {
-    fn get_image_file_path(&self, image_handle: Handle) -> Result<&CStr16, Error> {
-        #[repr(C)]
-        struct LoadedImagePart {
-            revision: u32,
-            parent_handle: Handle,
-            system_table: *const SystemTable<Boot>,
-            device_handle: Handle,
-            file_path: *const DevicePath,
-        }
-        Ok(unsafe {
-            CStr16::from_ptr(
-                self.open_protocol::<LoadedImage>(
-                    OpenProtocolParams {
-                        handle: image_handle,
-                        agent: image_handle,
-                        controller: None,
-                    },
-                    OpenProtocolAttributes::Exclusive,
-                )?
-                .interface
-                .get()
-                .cast::<LoadedImagePart>()
-                .as_ref()
-                .ok_or(Status::UNSUPPORTED)?
-                .file_path
-                .offset(1)
-                .cast::<Char16>(),
+    fn get_image_file_path(&self, image_handle: Handle) -> Option<PoolString> {
+        let loaded_image = self
+            .open_protocol::<LoadedImage>(
+                OpenProtocolParams {
+                    handle: image_handle,
+                    agent: image_handle,
+                    controller: None,
+                },
+                OpenProtocolAttributes::Exclusive,
             )
-        })
+            .expect("Failed to open protocol");
+        let loaded_image = unsafe { &*loaded_image.interface.get() };
+        let device_path_to_text = self
+            .locate_protocol::<DevicePathToText>()
+            .expect("Failed to locate protocol");
+        let device_path_to_text = unsafe { &*device_path_to_text.get() };
+        let device_path = loaded_image
+            .file_path()
+            .expect("Failed to get file path from loaded image");
+        device_path_to_text.convert_device_path_to_text(
+            self,
+            device_path,
+            DisplayOnly(false),
+            AllowShortcuts(false),
+        )
     }
 }
 

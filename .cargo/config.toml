@@ -1,9 +1,4 @@
-[build]
-target = "x86_64-unknown-uefi"
-
-[source]
-crates-io.replace-with = "ustc"
-ustc.registry = "https://mirrors.ustc.edu.cn/crates.io-index"
+build.target = "x86_64-unknown-uefi"
 
 [unstable]
 build-std = ["core", "compiler_builtins", "alloc"]

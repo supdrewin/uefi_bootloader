@@ -1,8 +1,8 @@
 [package]
-name = "uefi-bootloader"
+name = "uefi_bootloader"
 version = "0.2.0"
 edition = "2021"
-repository = "https://github.com/supdrewin/uefi-bootloader"
+repository = "https://github.com/supdrewin/uefi_bootloader"
 description = "UEFI BootLoader"
 license = "MPL-2.0"
 authors = ["Supdrewin"]
@@ -15,5 +15,5 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 tinybmp = "0.3"
-uefi = { version = "0.15", features = ["exts"] }
-uefi-services = "0.12"
+uefi = { version = "0.16", features = ["exts"] }
+uefi-services = "0.13"

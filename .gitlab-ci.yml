@@ -1,4 +1,12 @@
-image: rust:latest
+default:
+  image: rust:latest
+  before_script:
+    - |
+      {
+        echo "[source]"
+        echo "crates-io.replace-with = \"ustc\""
+        echo "ustc.registry = \"https://mirrors.ustc.edu.cn/crates.io-index\""
+      } | tee -a .cargo/config.toml
 
 variables:
   RUSTUP_UPDATE_ROOT: "https://mirrors.ustc.edu.cn/rust-static/rustup"
@@ -6,8 +14,10 @@ variables:
 
 build:
   script:
-    - cargo build --release
+    - cargo b -r --target aarch64-unknown-uefi
+    - cargo b -r --target i686-unknown-uefi
+    - cargo b -r --target x86_64-unknown-uefi
   artifacts:
     paths:
-      - target/x86_64-unknown-uefi/release/uefi-bootloader.efi
+      - target/*/release/uefi_bootloader.efi
     expire_in: 1 week
